@@ -17,8 +17,8 @@ def evaluation(y_true,y_pred,y_scores):
     """
 
     #confusion matrix with sklearn
-    print('y_true labels:', y_true)
-    print('y_pred labels:', y_pred)
+    # print('y_true labels:', y_true)
+    # print('y_pred labels:', y_pred)
 
     confusMat= mt.confusion_matrix(y_true,y_pred)
     # Check the shape to make sure it's a 2x2 matrix
@@ -46,6 +46,9 @@ def evaluation(y_true,y_pred,y_scores):
 
     y_true = np.array(y_true).astype(int)
     y_scores = np.array(y_scores).astype(float)
+    if y_scores.ndim > 1 and y_scores.shape[1] > 1:
+        y_scores = y_scores[:, 1]
+
     auc = round(mt.roc_auc_score(y_true,y_scores),3)
 
     print('-----evaluation-----')
