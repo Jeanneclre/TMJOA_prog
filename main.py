@@ -30,7 +30,7 @@ X = A.iloc[:, 1:].values
 # # y= y[:120]
 
 # Write the folder in which you want your output to be saved without '/' at the end
-folder_output='Predictions/middleLoop_testAUC_2'
+folder_output='Predictions/PbFea4'
 folder_output+='/'
 
 for iii in range(0, len(vecT)):

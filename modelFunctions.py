@@ -126,3 +126,10 @@ def delete_file(filename) -> None:
     if os.path.exists(filename) :
         os.remove(filename)
 
+def mean(lst):
+    """
+    Calculate the mean of a list
+    Input: list
+    Output: mean of the list
+    """
+    return sum(lst) / len(lst)
