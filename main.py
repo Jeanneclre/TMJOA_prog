@@ -30,8 +30,12 @@ X = A.iloc[:, 1:].values
 # # y= y[:120]
 
 # Write the folder in which you want your output to be saved without '/' at the end
-folder_output='Predictions/PbFea4'
+folder_output='Predictions/ReviewMiddle'
 folder_output+='/'
+
+folder_results = folder_output+'Results/'
+if not os.path.exists(os.path.dirname(folder_results)):
+    os.makedirs(os.path.dirname(folder_results))
 
 for iii in range(0, len(vecT)):
     i_PM = vecT[iii][0]
