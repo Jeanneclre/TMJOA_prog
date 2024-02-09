@@ -30,7 +30,7 @@ X = A.iloc[:, 1:].values
 # # y= y[:120]
 
 # Write the folder in which you want your output to be saved without '/' at the end
-folder_output='Predictions/ReviewMiddle_2024'
+folder_output='Predictions/40TrainingSets_allLoop_2024'
 folder_output+='/'
 
 folder_results = folder_output+'Results/'

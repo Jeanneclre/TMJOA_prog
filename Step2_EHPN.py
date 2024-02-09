@@ -155,7 +155,7 @@ def main(args):
             y0_in = y0[trainIn_idx]
             X1_in = X0[testIn_idx]
 
-            best_estimator,method_ht= hyperparam_tuning(model, param_grid, X0_in, y0_in,in_kf)
+            best_estimator,method_ht= hyperparam_tuning(model, param_grid, X0_in, y0_in,in_kf,seed)
             best_estimator.fit(X0_in,y0_in)
             predY_in = best_estimator.predict(X1_in)
             scores_in = np.array(best_estimator.predict_proba(X1_in)).astype(float)

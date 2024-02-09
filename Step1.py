@@ -86,7 +86,7 @@ def choose_model(method,seed0):
 
     return model, param_grid
 
-def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename,seed0):
+def runFS(modelPM,model,X,y,X_excludedOut,y_excludedOut,param_grid,inner_cv,fold, filename,seed0):
     """
     Features selection -> Best "nb_features" features selected, nb_features depending on the best AUC
     Input: model: model from the method list, X_train: Data, y_train: Target, y_valid: Correct answer
@@ -120,6 +120,9 @@ def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename,seed0):
             X_train, X_valid = X[train_FS_idx], X[valid_FS_idx]
             y_train, y_valid = y[train_FS_idx], y[valid_FS_idx]
 
+            # Add 40 data back into the training set
+            X_train = np.concatenate((X_excludedOut,X_train),axis=0)
+            y_train = np.concatenate((y_excludedOut,y_train),axis=0)
 
             model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0)[0]
             print('model_hyp in runFS',model_hyp)
@@ -248,7 +251,7 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0):
     return best_estimator,method
 
 
-def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excludedOut,testOut_idx,fold,df_predict,seed0):
+def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excludedOut,y_excludedOut,testOut_idx,fold,df_predict,seed0):
     '''
     The purpose of the middle loop is to select the best features of the dataset for
     the prediction.
@@ -307,7 +310,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     auc_midRow = []
     f1_midRow = []
 
-    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,param_gridFS,inner_cv,fold,filename,seed0)
+    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,X_excludedOut,y_excludedOut,param_gridFS,inner_cv,fold,filename,seed0)
 
     for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
@@ -333,6 +336,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
 
         # Add the excluded top 40 data back into the training set
         X_train_selected= np.concatenate((X_excludedOut_selected,X_trainIn_selected),axis=0)
+        y_train = np.concatenate((y_excludedOut,y_train),axis=0)
 
         # Hyperparameter tuning for the predictive model (PM)
         bestIn_estimator=hyperparam_tuning(modelPM, param_gridPM, X_train_selected, y_train, inner_cv,seed0)[0]
@@ -456,7 +460,7 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     header_topFeatures =['model FS_PM']
     row_topFeatures = [f'{methodFS}_{methodPM}']
 
-    best_nb_features = 0
+    nb_features_selected= []
     top_features_outer = []
     best_top40 = []
 
@@ -477,8 +481,9 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
         print('train_idx',train_idx)
         print('X_train shape',X_train.shape)
 
-        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,test_idx,fold+1,df_predict_inner,seed0)
+        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
 
+        nb_features_selected.append(NbFeatures)
         row_topFeatures.append(f"{NbFeatures}: {top_features_idx}")
         mid_auc.append(auc_validation)
         row_mid_AUCeval.append(auc_validation)
@@ -491,7 +496,7 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
         # Test the best model from Middle loop
         # best_innerModel = pickle.load(open(bestInnerM_filename,'rb'))
-        bestMid_estimator.fit(X_train[:,top_features_idx], y_train)
+        # bestMid_estimator.fit(X_train[:,top_features_idx], y_train)
         y_Fpred = bestMid_estimator.predict(X_test[:,top_features_idx])
 
         # Test if the model has a predict_proba method
@@ -552,7 +557,7 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     print("********Final**********")
     column_name,list_eval = mf.evaluation(y_trueList,y_predicts,y_scoresList)[1:]
     column_name.insert(0,'Nb Features Selected')
-    list_eval.insert(0,best_nb_features)
+    list_eval.insert(0,f'{nb_features_selected}')
     mf.write_files(outerL_filename,column_name,list_eval)
 
     #Save evaluation in a csv file for each model MethodPM_MethodFS that is runned in outerloop and add to the previous data
@@ -574,4 +579,4 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     df_predict = pd.DataFrame({'Predicted proba': best_predict_proba})
     df_predict.to_csv(prediction_filename, index=False)
 
-    return top_features_outer, best_nb_features, best_top40
+    return top_features_outer, nb_features_selected, best_top40
