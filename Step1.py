@@ -86,7 +86,7 @@ def choose_model(method,seed0):
 
     return model, param_grid
 
-def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename):
+def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename,seed0):
     """
     Features selection -> Best "nb_features" features selected, nb_features depending on the best AUC
     Input: model: model from the method list, X_train: Data, y_train: Target, y_valid: Correct answer
@@ -121,7 +121,7 @@ def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename):
             y_train, y_valid = y[train_FS_idx], y[valid_FS_idx]
 
 
-            model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv)[0]
+            model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0)[0]
             print('model_hyp in runFS',model_hyp)
             model_hyp.fit(X_train, y_train)
 
@@ -208,22 +208,18 @@ def runFS(modelPM,model,X,y,param_grid,inner_cv,fold, filename):
     mf.write_files(filename,listHeader,auc_perSelection)
     return nb_selected_features, top_N_largest_indices_final
 
-def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
+def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0):
     '''
     Looking for the best set of hyperparameter for the model used from the grid of hyperparameters.
-    Input: model: model from the method list, param_grid: hyperparameters grid, X_train: Data, y_train: Target
+    RandomizedSearchCV is used to find the best hyperparameters because it is faster than GridSearchCV and avoid overfitting.
+
+    Input: model: model from the method list, param_grid: hyperparameters grid, X_train: Data, y_train: Target,
+                inner_cv: cross-validation method and seed0: seed
     Output: best_estimator: model with the best hyperparameters
     '''
-
-    # Hyperparameter tuning with GridSearchCV if the grid is not too big,
-    # otherwise use RandomizedSearchCV - faster
-    # if model == 'GaussianMixture()':
-    #     scorer = metrics.make_scorer(metrics.accuracy_score)
-    # else:
     scorer = metrics.make_scorer(metrics.roc_auc_score)
 
     if len(param_grid) > 1:
-        # print('use RamdomizedSearchCV')
         method = 'RandomizedSearchCV'
         hyperparam_tuning = RandomizedSearchCV(estimator=model,
                             param_distributions=param_grid,
@@ -233,7 +229,8 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
                             cv=inner_cv,
                             verbose=0,
                             refit=True,
-                            error_score='raise')
+                            error_score='raise',
+                            random_state=seed0)
     else: # Currently not used
         method = 'GridSearchCV'
         hyperparam_tuning = GridSearchCV(estimator=model,
@@ -243,110 +240,29 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
                             cv=inner_cv,
                             verbose=0,
                             refit=True,
-                            error_score='raise')
+                            error_score='raise',
+                            random_state=seed0)
 
     hyperparam_tuning.fit(X_train, y_train)
     best_estimator = hyperparam_tuning.best_estimator_
     return best_estimator,method
 
-# def run_innerLoop(modelPM,X_trainMid,y_trainMid,param_gridPM,inner_cv,top_N_features_idx,filename,fold,nb_loop):
-#     '''
-#     Inner Loop for the cross validation method.
 
-#     2) Hyperparameter tuning with the methodPM (model for the predictive model)
-#     Input : X_trainMid: training Dataset with the selected features only,
-#             y_trainMid: Target, param_gridPM: hyperparameters grid, inner_cv: cross validation method
-
-#     '''
-
-#     # Init lists for the evaluation
-#     predYT = [] # all predictions
-#     y_trueList = [] # all correct answers
-#     scoresList = [] # all probabilities of the predictions
-
-#     bestM_filename = filename.split('.')[0]+'_bestInnerModel'+'_NULL'+'.pkl'
-#     acc0_in,f1_scoresIn_init = 0.5,0
-#     file_toDel = 0
-
-#     filenameIn = 'Results/TestAUC/PbFea5/AUC_innerloop.csv'
-#     header = ['model PM','Fold-subfold']
-#     auc_row = [f'{modelPM}',nb_loop]
-
-#     for subfold, (train_In_idx, valid_In_idx) in enumerate(inner_cv.split(X_trainMid,y_trainMid)):
-#         print(f'________Inner Loop {subfold}_________')
-#         header.append(f'AUC {subfold}')
-
-#         print('valid_idx',valid_In_idx)
-#         print('train_idx',train_In_idx.shape)
-
-#         # Split your data
-#         X_trainIn, X_validIn = X_trainMid[train_In_idx], X_trainMid[valid_In_idx]
-#         y_trainIn, y_validIn = y_trainMid[train_In_idx], y_trainMid[valid_In_idx]
-
-#         ## Hyperparameter tuning for the predictive model (PM) ##
-#         best_estimator = hyperparam_tuning(modelPM, param_gridPM, X_trainIn, y_trainIn, inner_cv)[0]
-#         print('best_estimator for PM:', best_estimator)
-
-#         # ## Evaluation of the model with the validation set ##
-#         best_estimator.fit(X_trainIn, y_trainIn)
-
-#         y_pred = best_estimator.predict(X_validIn)
-#         y_scores = best_estimator.predict_proba(X_validIn)[:,1]
-#         y_scores = np.array(y_scores).astype(float)
-
-#         # Save predictions in the lists
-#         for i in range(len(y_pred)):
-#             predYT.append(y_pred[i])
-#             y_trueList.append(y_validIn[i]) #y_validVal[i]
-#             scoresList.append(y_scores[i])
-
-#         ## Save the best model according to the AUC ##
-#         aucIn = metrics.roc_auc_score(y_validIn,y_scores) #y_validVal
-#         auc_row.append(aucIn)
-
-#         f1_scores_In = metrics.f1_score(y_validIn,y_pred, average='macro')
-#         if aucIn >= acc0_in :
-#             if f1_scores_In > f1_scoresIn_init:
-#                 acc0_in = aucIn
-#                 f1_scoresIn_init = f1_scores_In
-#                 # Save the model into "byte stream"
-#                 if file_toDel != 0:
-#                     mf.delete_file(bestM_filename)
-#                 bestM_filename = filename.split('.')[0]+'_bestModel_Inner'+f'_{fold}-{subfold}'+'.pkl'
-
-#                 bestIn_estimator = best_estimator
-#                 pickle.dump(best_estimator, open(bestM_filename, 'wb'))
-#                 file_toDel = 1
-
-#         # see if bestM_filename exists and save the current model if not
-#         if not os.path.exists(bestM_filename):
-#             bestM_filename.replace('_bestModel_Inner', '_NoBest_Inner')
-#             pickle.dump(best_estimator, open(bestM_filename, 'wb'))
-
-#     mf.write_files(filenameIn,header,auc_row)
-#     ## Evaluation of the NsubFolds of the Inner Loop and save the results ##
-#     column_name,list_eval = mf.evaluation(y_trueList,predYT,scoresList)[1:]
-#     column_name.insert(0,'Nb Features Selected')
-#     list_eval.insert(0,len(top_N_features_idx))
-#     mf.write_files(filename,column_name,list_eval)
-
-#     return bestM_filename, bestIn_estimator
-
-def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut ,testOut_idx,fold,df_predict,seed0):
+def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excludedOut,testOut_idx,fold,df_predict,seed0):
     '''
     The purpose of the middle loop is to select the best features of the dataset for
     the prediction.
 
-
     This loop is splitted in 2 parts:
 
     1) Feature selection with the methodFS (model for the feature selection)
-    2) Call the inner loop with the training set of the middle
+    2) Call the inner loop with the training set of the middle -- The inner loop is the hyperparameter tuning of the PM model
 
     The training data from the folds of the outer loop are splitted in NsubFolds.
-    The best model of the inner loop is kept according to the AUC.
+    We evaluate the generalization of the model on the validation set of the middle loop.
 
-    All the models runned in the inner loop are evaluated and the result is saved in a csv file.
+    -> We keep the predicted probabilities of each best_estimator from the hyperparameter tuning of the inner loop in a csv file.
+    This file must contains Nfolds columns and 74 rows (74 is the total number of data in the dataset - 40 excluded data 'NA' values)
 
     Input: methodFS: name of the method for the feature selection, methodPM: name of the method for the predictive model,
            filename: name of the file for the results, X: Data, y: Target, fold: index of the outer fold
@@ -391,7 +307,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut ,testOut_id
     auc_midRow = []
     f1_midRow = []
 
-    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,param_gridFS,inner_cv,fold,filename)
+    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,param_gridFS,inner_cv,fold,filename,seed0)
 
     for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
@@ -411,12 +327,15 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut ,testOut_id
 
         # Remove unnecessary features
         print('len(top_features_idx)',len(top_features_idx))
-        X_train_selected = X_train[:,top_features_idx]
+        X_excludedOut_selected = X_excludedOut[:,top_features_idx]
+        X_trainIn_selected = X_train[:,top_features_idx]
         X_valid_selected = X_valid[:,top_features_idx]
 
+        # Add the excluded top 40 data back into the training set
+        X_train_selected= np.concatenate((X_excludedOut_selected,X_trainIn_selected),axis=0)
 
         # Hyperparameter tuning for the predictive model (PM)
-        bestIn_estimator=hyperparam_tuning(modelPM, param_gridPM, X_train_selected, y_train, inner_cv)[0]
+        bestIn_estimator=hyperparam_tuning(modelPM, param_gridPM, X_train_selected, y_train, inner_cv,seed0)[0]
         print('\033[94m methodPM:',methodPM)
         print(f"\033[94m estimator's parameters: {bestIn_estimator.get_params()} \033[0m")
 
@@ -509,7 +428,8 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
     Nfold = 10
     seed0 = 2024
-    seed0 = np.random.seed(seed0)
+    # seed0 = np.random.seed(seed0)
+    print(f' \033[34mseed0: {seed0} \033[0m')
 
     X_excluded = X[:40,:]
     y_excluded = y[:40]
@@ -557,7 +477,7 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
         print('train_idx',train_idx)
         print('X_train shape',X_train.shape)
 
-        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,test_idx,fold+1,df_predict_inner,seed0)
+        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,test_idx,fold+1,df_predict_inner,seed0)
 
         row_topFeatures.append(f"{NbFeatures}: {top_features_idx}")
         mid_auc.append(auc_validation)
