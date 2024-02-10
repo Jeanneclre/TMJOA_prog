@@ -121,8 +121,8 @@ def runFS(modelPM,model,X,y,X_excludedOut,y_excludedOut,param_grid,inner_cv,fold
             y_train, y_valid = y[train_FS_idx], y[valid_FS_idx]
 
             # Add 40 data back into the training set
-            X_train = np.concatenate((X_excludedOut,X_train),axis=0)
-            y_train = np.concatenate((y_excludedOut,y_train),axis=0)
+            # X_train = np.concatenate((X_excludedOut,X_train),axis=0)
+            # y_train = np.concatenate((y_excludedOut,y_train),axis=0)
 
             model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0)[0]
             print('model_hyp in runFS',model_hyp)
@@ -284,7 +284,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     # Split the data in NsubFolds
     Nsubfolds = 10
     inner_cv = StratifiedKFold(n_splits=Nsubfolds, shuffle=True, random_state=seed0)
-
+    fs_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed0)
     # Init lists for the evaluation
     predYT = [] # all predictions
     y_trueList = [] # all correct answers
@@ -317,7 +317,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     header_bestParam = ['model FS_PM']
     best_param_row = [f'{methodFS}_{methodPM}']
 
-    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,X_excludedOut,y_excludedOut,param_gridFS,inner_cv,fold,filename,seed0)
+    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,X_excludedOut,y_excludedOut,param_gridFS,fs_cv,fold,filename,seed0)
 
     for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
@@ -432,7 +432,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
 
 
 
-def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_output):
+def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_output,seed0):
     """
     Outer loop of the nested cross validation:
 
@@ -459,7 +459,7 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     print('********Outer Loop**********')
 
     Nfold = 10
-    seed0 = 2024
+    # seed0 = 2024
     # seed0 = np.random.seed(seed0)
     print(f' \033[34mseed0: {seed0} \033[0m')
 
