@@ -243,8 +243,7 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0):
                             cv=inner_cv,
                             verbose=0,
                             refit=True,
-                            error_score='raise',
-                            random_state=seed0)
+                            error_score='raise')
 
     hyperparam_tuning.fit(X_train, y_train)
     best_estimator = hyperparam_tuning.best_estimator_
@@ -291,6 +290,10 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     y_trueList = [] # all correct answers
     scoresList = [] # all probabilities of the predictions
 
+    predYT_train = [] # all predictions
+    y_trueList_train = [] # all correct answers
+    scoresList_train = [] # all probabilities of the predictions
+
     # Init variables for the best model
     idx = 0
     acc0,f1_scoresMid_init = 0.5,0
@@ -305,15 +308,20 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     list_data_idx = []
 
     filenameMid =filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/AUC_middleloop.csv'
-    header = ['model FS_PM','Fold Out','AUC','F1']
+    header = ['model FS_PM','Fold Out','AUC train','AUC','F1 train','F1']
     eval_midRow = [f'{methodFS}_{methodPM}',fold]
     auc_midRow = []
     f1_midRow = []
+
+    filename_Bestparam = filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/BestParam_middleloop.csv'
+    header_bestParam = ['model FS_PM']
+    best_param_row = [f'{methodFS}_{methodPM}']
 
     NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,X_excludedOut,y_excludedOut,param_gridFS,inner_cv,fold,filename,seed0)
 
     for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
+        header_bestParam.append(f'Fold {subfold}')
 
         nb_loop = f'{fold}-{subfold}'
         idx += 1
@@ -343,6 +351,8 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
         print('\033[94m methodPM:',methodPM)
         print(f"\033[94m estimator's parameters: {bestIn_estimator.get_params()} \033[0m")
 
+        best_param_row.append(bestIn_estimator.get_params())
+
         # Evaluation validation sets
         y_scores = bestIn_estimator.predict_proba(X_valid_selected)[:,1]
         y_pred = bestIn_estimator.predict(X_valid_selected)
@@ -352,6 +362,16 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
             predYT.append(y_pred[i])
             y_trueList.append(y_valid[i])
             scoresList.append(y_scores[i])
+
+        #Evaluation training sets
+        y_scoresTrain = bestIn_estimator.predict_proba(X_train_selected)[:,1]
+        y_predTrain = bestIn_estimator.predict(X_train_selected)
+
+        for i in range(len(y_predTrain)):
+            predYT_train.append(y_predTrain[i])
+            y_trueList_train.append(y_train[i])
+            scoresList_train.append(y_scoresTrain[i])
+      
 
         '''
         Give the real data index of the validation set for /out_valid
@@ -381,7 +401,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
 
             list_data_idx.append([data_idx+40,good_idx])
 
-            best_predict_proba[good_idx] = np.round(y_scores[i],4)
+            best_predict_proba[good_idx] = round(y_scores[i],4)
 
 
     # Save predicted probabilities of the inner loop in a csv file
@@ -395,12 +415,20 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     # Save Evaluation of the middle loop
     auc_midRow= round(metrics.roc_auc_score(y_trueList,scoresList),3)
     f1_midRow = round(metrics.f1_score(y_trueList,predYT, average='macro'),3)
+
+    auc_midRow_train= round(metrics.roc_auc_score(y_trueList_train,scoresList_train),3)
+    f1_midRow_train = round(metrics.f1_score(y_trueList_train,predYT_train, average='macro'),3)
+
+    eval_midRow.append(auc_midRow_train)
     eval_midRow.append(auc_midRow)
+    eval_midRow.append(f1_midRow_train)
     eval_midRow.append(f1_midRow)
     mf.write_files(filenameMid,header,eval_midRow)
 
+    mf.write_files(filename_Bestparam,header_bestParam,best_param_row)
 
-    return predYT, y_trueList, bestMM_filename,NbFeatures, top_features_idx, auc_midRow, f1_midRow, bestIn_estimator
+  
+    return predYT, y_trueList, bestMM_filename,NbFeatures, top_features_idx, auc_midRow, f1_midRow, bestIn_estimator,auc_midRow_train, f1_midRow_train
 
 
 
@@ -455,6 +483,9 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     # Files to save evaluation
     mid_auc = []
     mid_f1 = []
+    mid_aucTrain = []
+    mid_f1Train = []
+
     header_mid_AUCeval,header_mid_f1eval = ['model FS_PM'],['model FS_PM']
     row_mid_AUCeval,row_mid_f1eval = [f'{methodFS}_{methodPM}'],[f'{methodFS}_{methodPM}']
     header_topFeatures =['model FS_PM']
@@ -466,6 +497,9 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
     df_predict_inner = pd.DataFrame() # dataframe to save the predictions proba of the inner loop
     best_predict_proba=['NA']* np.shape(X)[0] ## 74 is the total number of data in the dataset
+
+    idx_split_train={}
+    idx_split_test={}
 
     for fold, (train_idx, test_idx) in enumerate(folds_CVT.split(X_remaining,y_remaining)):
         print(f"================Fold {fold+1}================")
@@ -479,9 +513,13 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
         print('X_remaining shape',X_remaining.shape)
         print('train_idx',train_idx)
+        idx_split_train[fold] = train_idx
+        idx_split_test[fold] = test_idx
         print('X_train shape',X_train.shape)
 
-        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
+       
+
+        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator,auc_midTrain,f1_midTrain = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
 
         nb_features_selected.append(NbFeatures)
         row_topFeatures.append(f"{NbFeatures}: {top_features_idx}")
@@ -490,9 +528,14 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
         mid_f1.append(f1_validation)
         row_mid_f1eval.append(f1_validation)
 
+        mid_aucTrain.append(auc_midTrain)
+        mid_f1Train.append(f1_midTrain)
+
         # Add the excluded top 40 data back into the training set
         X_train = np.concatenate(( X_excluded, X_train), axis=0)
         y_train = np.concatenate((y_excluded,y_train ), axis=0)
+        print('\033[34mX_train shape',X_train.shape)
+        print('y_train shape\033[0m',y_train.shape)
 
         # Test the best model from Middle loop
         # best_innerModel = pickle.load(open(bestInnerM_filename,'rb'))
@@ -534,8 +577,8 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     f1_train = round(metrics.f1_score(y_trainList,y_predictsTrain, average='macro'),3)
 
     globalEval_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/GlobEvaluation.csv'
-    column_nameTrain = ['Model FS_PM' ,'AUC train (O)','AUC test (O)','AUC validation (M)','F1 train (O)','F1 test (O)','F1 validation (M)']
-    list_evalTrain = [f'{methodFS}_{methodPM}',auc_train,auc_test,sum(mid_auc)/len(mid_auc),f1_train,f1_test, sum(mid_f1)/len(mid_f1)]
+    column_nameTrain = ['Model FS_PM' ,'AUC train (O)','AUC test (O)','AUC train (M)','AUC validation (M)','F1 train (O)','F1 test (O)','F1 train (M)','F1 validation (M)']
+    list_evalTrain = [f'{methodFS}_{methodPM}',auc_train,auc_test,sum(mid_aucTrain)/len(mid_aucTrain),sum(mid_auc)/len(mid_auc),f1_train,f1_test,sum(mid_f1Train)/len(mid_f1Train),sum(mid_f1)/len(mid_f1)]
     mf.write_files(globalEval_filename,column_nameTrain,list_evalTrain)
 
     # Save predictions of the inner loop in a csv file
