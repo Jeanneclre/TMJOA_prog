@@ -3,6 +3,9 @@
 The dataset is "TMJOAI_Long_040422_Norm.csv". The total length is 74 with 70 features for each patient.
 
 ## Step 1
+Scheme of the implemented method:
+![Step1_explanation](https://github.com/Jeanneclre/TMJOA_prog/assets/91120559/057734e3-beec-458c-addf-557628ec6018)
+
 ### Run the training
 You can choose how many models you want to run with the length of vecT in main.py.
 1) Choose the name of the folder with the predictions, the saved models, the top features and the predicted probabilities in out/ and out_valid/ used for step 2, with "folder_output".
