@@ -86,120 +86,144 @@ def choose_model(method,seed0):
 
     return model, param_grid
 
-def runFS(modelPM,model,X_train,X_valid,y_train,y_valid,param_grid,inner_cv,fold_subfold):
+def runFS(modelPM,model,X,y,X_excludedOut,y_excludedOut,param_grid,inner_cv,fold, filename,seed0):
     """
     Features selection -> Best "nb_features" features selected, nb_features depending on the best AUC
     Input: model: model from the method list, X_train: Data, y_train: Target, y_valid: Correct answer
     Output: nb_selected: nb of features selected,
-            X_train_selected: Data with selected features,
-            X_valid_selected: Data with selected features
+            top_indices: indices of the best features selected
     """
-
-    auc0 =0
+    auc0 =0.5
     nb_features = [5,10,15,20]
-    model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv)[0]
-    print('model_hyp in runFS',model_hyp)
-    model_hyp.fit(X_train, y_train) # should I choose hyperparam before?
 
-    # If the model_hyp doesn't have a coef_ attribute, use feature_importances_ attribute
-    if hasattr(model_hyp, "feature_importances_"):
-        Coefficient = np.abs(model_hyp.feature_importances_)
-    if hasattr(model_hyp, "coef_"):
-        Coefficient=np.abs(model_hyp.coef_)[0]
-    if not hasattr(model_hyp, "feature_importances_") and not hasattr(model_hyp, "coef_"):
-        # For the nnet model, use the sum of the absolute values of the weights
-        Coefficient = np.sum(np.abs(model_hyp.coefs_[0]), axis=1)
+    listHeader = ['model FS_PM','fold','5','10','15','20']
+    filename = filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/AUC_featuresSelection.csv'
+    auc_perSelection =[f'{model}_{modelPM}',fold]
 
-    features_auc =[]
-    features_auc_index = []
-
-    # sort the coefficients from the smallest to the largest
-    sorted_indices = np.argsort(Coefficient)
     nb_selected_features= 0
+    auc_perNb=[]
+    top_indicesperNb = []
     top_N_largest_indices_final = []
-    top_40_largest_indices = []
-
-    X_trainSelected_final = X_train
-    X_validSelected_final = X_valid
-    top_N_largest_indices_final= sorted_indices[:]
-
-    listHeader = ['model FS_PM','fold-subfold','5','10','15','20']
-    filename = 'Results/TestAUC/AUC_featuresSelection_Middle2.csv'
-    auc_perSelection =[f'{model}_{modelPM}',fold_subfold]
 
     for nb in nb_features:
+        y_trueList_fs = []
+        scoresList_fs = []
+        top_indicesperSubfold = []
+        dict_features = {}
+        list_feature = [0]*X.shape[1]
 
-        if model == 'AUC':
-            #use AUC to score the features importance or the coef
-            for i, col in enumerate(X_train.T):
-                # best_estimatorFS = hyperparam_tuning(model, param_grid, X_train_selected, y_train, inner_cv)
-                # # Train the classifier using only this feature
-                # best_estimatorFS.fit(col.reshape(1,-1).T, y_train)
+        for subfoldFS, (train_FS_idx, valid_FS_idx) in enumerate(inner_cv.split(X,y)):
+            print(f'________Feature Selection {subfoldFS}_________')
+            print('valid_idx',valid_FS_idx.shape)
+            print('train_idx',train_FS_idx.shape)
 
-                # probs =best_estimatorFS.predict_proba(X_valid[:,i:i+1])[:,1]
+            # Split data
+            X_train, X_valid = X[train_FS_idx], X[valid_FS_idx]
+            y_train, y_valid = y[train_FS_idx], y[valid_FS_idx]
 
-                # Calculate AUC score for this feature
-                features_imp = metrics.roc_auc_score(y_valid, X_valid[:,i:i+1]) #probs
+            # Add 40 data back into the training set
+            # X_train = np.concatenate((X_excludedOut,X_train),axis=0)
+            # y_train = np.concatenate((y_excludedOut,y_train),axis=0)
 
-                features_auc_index.append(i)
-                features_auc.append(features_imp)
+            model_hyp = hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0)[0]
+            print('model_hyp in runFS',model_hyp)
+            model_hyp.fit(X_train, y_train)
 
-            # Sort features by AUC score
-            sorted_features = sorted(features_auc)
-            sorted_features_index = np.argsort(features_auc)
+            # If the model_hyp doesn't have a coef_ attribute, use feature_importances_ attribute
+            if hasattr(model_hyp, "feature_importances_"):
+                Coefficient = np.abs(model_hyp.feature_importances_)
+            if hasattr(model_hyp, "coef_"):
+                Coefficient=np.abs(model_hyp.coef_)[0]
+            if not hasattr(model_hyp, "feature_importances_") and not hasattr(model_hyp, "coef_"):
+                # For the nnet model, use the sum of the absolute values of the weights
+                Coefficient = np.sum(np.abs(model_hyp.coefs_[0]), axis=1)
 
-            top_N_largest_indices = sorted_features_index[-nb:]
+            features_auc =[]
+            features_auc_index = []
+
+            # sort the coefficients from the smallest to the largest
+            sorted_indices = np.argsort(Coefficient)
+
+
+            if model == 'AUC':
+                #use AUC to score the features importance or the coef
+                for i, col in enumerate(X_train.T):
+                    # Calculate AUC score for this feature
+                    features_imp = metrics.roc_auc_score(y_valid, X_valid[:,i:i+1]) #probs
+
+                    features_auc_index.append(i)
+                    features_auc.append(features_imp)
+
+                # Sort features by AUC score
+                sorted_features_index = np.argsort(features_auc)
+                top_N_largest_indices = sorted_features_index[-nb:]
+                for ind in top_N_largest_indices:
+                    if ind in dict_features:
+                        dict_features[ind].append(features_auc[ind])
+                    else:
+                        dict_features[ind] = features_auc[ind]
+
+            else:
+                # select the top nb_features (nb) largest indices
+                top_N_largest_indices = sorted_indices[-nb:]
+
+                for ind in top_N_largest_indices:
+                    if ind in dict_features:
+                        dict_features[ind].append(Coefficient[ind])
+                    else:
+                        dict_features[ind] = [Coefficient[ind]]
+
+            # Save predicted proba, and y_true in a list for final evaluation
             X_train_selected = X_train[:,top_N_largest_indices]
+            model_hyp.fit(X_train_selected, y_train)
             X_valid_selected = X_valid[:,top_N_largest_indices]
+            y_scores_fs = model_hyp.predict_proba(X_valid_selected)[:,1]
 
-        else:
-            best_estimatorFS= hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv)[0]
+            for j in range(len(y_valid)):
+                y_trueList_fs.append(y_valid[j])
+                scoresList_fs.append(y_scores_fs[j])
 
-            # select the top nb_features (nb) largest indices
-            top_N_largest_indices = sorted_indices[-nb:]
-            # print('len top_N_largest_indices',len(top_N_largest_indices))
-            X_train_selected = X_train[:,top_N_largest_indices]
-            X_valid_selected = X_valid[:,top_N_largest_indices]
+            top_indicesperSubfold.append(top_N_largest_indices)
+
+        auc = round(metrics.roc_auc_score(y_trueList_fs,scoresList_fs),3)
+        auc_perNb.append(auc)
+        top_indicesperNb.append(top_indicesperSubfold) # Should be a list of lists of lists of indices
 
 
-        print('best_estimatorFS in runFS',best_estimatorFS)
-        #Evaluate the model with the selected features
-        #to choose the right number of features to get the best AUC
-        best_estimatorFS.fit(X_train_selected, y_train)
-        y_scores = best_estimatorFS.predict_proba(X_valid_selected)[:,1]
-        y_scores = np.array(y_scores).astype(float)
-        auc = metrics.roc_auc_score(y_valid,y_scores)
+        # Save the nb bests features indices out of the 10 subfold with this function: sum(lst_coef)/(nb-len(lst_coef))
+        # This way,we use the number of times a feature was selected AND the value of its importance.
+        for key in dict_features:
+            if len(dict_features[key])==nb:
+                list_feature[key]=sum(dict_features[key]) # avoid 0 division
+            else:
+                list_feature[key]=sum(dict_features[key])/(nb-len(dict_features[key]))
+
         auc_perSelection.append(auc)
-        if auc > auc0 :
+        if auc >=auc0:
             auc0 = auc
             nb_selected_features = nb
-            X_trainSelected_final = X_train_selected
-            X_validSelected_final = X_valid_selected
-            top_N_largest_indices_final = top_N_largest_indices
+            top_N_largest_indices_final = np.argsort(list_feature)[-nb_selected_features:] #save indices of the best features selected
+            print('top_N_largest_indices_final',top_N_largest_indices_final)
 
-        # print('nb_selected_features in runFS',nb_selected_features)
-        print('top_N_largest_indices in runFS',top_N_largest_indices_final)
+    if len(top_N_largest_indices_final) == 0:
+        print("\033[91m-- No features selected - all of them where kept --\033[0m")
+        top_N_largest_indices_final = np.arange(X.shape[1])
 
     mf.write_files(filename,listHeader,auc_perSelection)
-    return nb_selected_features, X_trainSelected_final, X_validSelected_final, top_N_largest_indices_final, top_40_largest_indices
+    return nb_selected_features, top_N_largest_indices_final
 
-
-def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
+def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0):
     '''
     Looking for the best set of hyperparameter for the model used from the grid of hyperparameters.
-    Input: model: model from the method list, param_grid: hyperparameters grid, X_train: Data, y_train: Target
+    RandomizedSearchCV is used to find the best hyperparameters because it is faster than GridSearchCV and avoid overfitting.
+
+    Input: model: model from the method list, param_grid: hyperparameters grid, X_train: Data, y_train: Target,
+                inner_cv: cross-validation method and seed0: seed
     Output: best_estimator: model with the best hyperparameters
     '''
-
-    # Hyperparameter tuning with GridSearchCV if the grid is not too big,
-    # otherwise use RandomizedSearchCV - faster
-    # if model == 'GaussianMixture()':
-    #     scorer = metrics.make_scorer(metrics.accuracy_score)
-    # else:
     scorer = metrics.make_scorer(metrics.roc_auc_score)
 
     if len(param_grid) > 1:
-        # print('use RamdomizedSearchCV')
         method = 'RandomizedSearchCV'
         hyperparam_tuning = RandomizedSearchCV(estimator=model,
                             param_distributions=param_grid,
@@ -209,7 +233,8 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
                             cv=inner_cv,
                             verbose=0,
                             refit=True,
-                            error_score='raise')
+                            error_score='raise',
+                            random_state=seed0)
     else: # Currently not used
         method = 'GridSearchCV'
         hyperparam_tuning = GridSearchCV(estimator=model,
@@ -225,105 +250,22 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv):
     best_estimator = hyperparam_tuning.best_estimator_
     return best_estimator,method
 
-def run_innerLoop(modelPM,X_trainMid,y_trainMid,param_gridPM,inner_cv,top_N_features_idx,filename,fold,nb_loop):
-    '''
-    Inner Loop for the cross validation method.
 
-    2) Hyperparameter tuning with the methodPM (model for the predictive model)
-    Input : X_trainMid: training Dataset with the selected features only,
-            y_trainMid: Target, param_gridPM: hyperparameters grid, inner_cv: cross validation method
-
-    '''
-
-    # Init lists for the evaluation
-    predYT = [] # all predictions
-    y_trueList = [] # all correct answers
-    scoresList = [] # all probabilities of the predictions
-
-    bestM_filename = filename.split('.')[0]+'_bestInnerModel'+'_NULL'+'.pkl'
-    acc0_in = 0
-    file_toDel = 0
-
-    filenameIn = 'Results/TestAUC/AUC_innerloop2.csv'
-    header = ['model PM','Fold-subfold']
-    auc_row = [f'{modelPM}',nb_loop]
-
-    for subfold, (train_In_idx, valid_In_idx) in enumerate(inner_cv.split(X_trainMid,y_trainMid)):
-        print(f'________Inner Loop {subfold}_________')
-        header.append(f'AUC {subfold}')
-
-
-        print('valid_idx',valid_In_idx)
-        print('train_idx',train_In_idx.shape)
-
-
-
-        # Split your data
-        X_trainIn, X_validIn = X_trainMid[train_In_idx], X_trainMid[valid_In_idx]
-        y_trainIn, y_validIn = y_trainMid[train_In_idx], y_trainMid[valid_In_idx]
-
-        ## Hyperparameter tuning for the predictive model (PM) ##
-        best_estimator = hyperparam_tuning(modelPM, param_gridPM, X_trainIn, y_trainIn, inner_cv)[0]
-        print('best_estimator for PM:', best_estimator)
-
-        # ## Evaluation of the model with the validation set ##
-        best_estimator.fit(X_trainIn, y_trainIn)
-
-        y_pred = best_estimator.predict(X_validIn)
-        y_scores = best_estimator.predict_proba(X_validIn)[:,1]
-        y_scores = np.array(y_scores).astype(float)
-
-        # Save predictions in the lists
-        for i in range(len(y_pred)):
-            predYT.append(y_pred[i])
-            y_trueList.append(y_validIn[i]) #y_validVal[i]
-            scoresList.append(y_scores[i])
-
-        ## Save the best model according to the AUC ##
-        aucIn = metrics.roc_auc_score(y_validIn,y_scores) #y_validVal
-        auc_row.append(aucIn)
-
-
-        if aucIn > acc0_in :
-            acc0_in = aucIn
-            # Save the model into "byte stream"
-            if file_toDel != 0:
-                mf.delete_file(bestM_filename)
-            bestM_filename = filename.split('.')[0]+'_bestModel_Inner'+f'_{fold}-{subfold}'+'.pkl'
-
-            pickle.dump(best_estimator, open(bestM_filename, 'wb'))
-            file_toDel = 1
-
-        # see if bestM_filename exists and save the current model if not
-        if not os.path.exists(bestM_filename):
-            bestM_filename.replace('_bestModel_Inner', '_NoBest_Inner')
-            pickle.dump(best_estimator, open(bestM_filename, 'wb'))
-
-    mf.write_files(filenameIn,header,auc_row)
-    ## Evaluation of the NsubFolds of the Inner Loop and save the results ##
-    column_name,list_eval = mf.evaluation(y_trueList,predYT,scoresList)[1:]
-    column_name.insert(0,'Nb Features Selected')
-    list_eval.insert(0,len(top_N_features_idx))
-    mf.write_files(filename,column_name,list_eval)
-
-
-    return bestM_filename
-
-def run_middleLoop(methodFS,methodPM, filename,X,y ,testOut_idx,fold,df_predict,seed0):
+def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excludedOut,y_excludedOut,testOut_idx,fold,df_predict,seed0):
     '''
     The purpose of the middle loop is to select the best features of the dataset for
     the prediction.
 
-
     This loop is splitted in 2 parts:
 
     1) Feature selection with the methodFS (model for the feature selection)
-    2) Call the inner loop with the training set of the middle
+    2) Call the inner loop with the training set of the middle -- The inner loop is the hyperparameter tuning of the PM model
 
     The training data from the folds of the outer loop are splitted in NsubFolds.
-    The best model of the inner loop is kept according to the AUC.
+    We evaluate the generalization of the model on the validation set of the middle loop.
 
-    All the models runned in the inner loop are evaluated and the result is saved in a csv file.
+    -> We keep the predicted probabilities of each best_estimator from the hyperparameter tuning of the inner loop in a csv file.
+    This file must contains Nfolds columns and 74 rows (74 is the total number of data in the dataset - 40 excluded data 'NA' values)
 
     Input: methodFS: name of the method for the feature selection, methodPM: name of the method for the predictive model,
            filename: name of the file for the results, X: Data, y: Target, fold: index of the outer fold
@@ -337,77 +279,91 @@ def run_middleLoop(methodFS,methodPM, filename,X,y ,testOut_idx,fold,df_predict,
     modelPM,param_gridPM = choose_model(methodPM,seed0)
 
     # Remove the first 4 datas from the validation set to use them as training set
-    print('X shape',X.shape)
-    print('y shape',y.shape)
-
-    # X_excluded = X[:40,:]
-    # y_excluded = y[:40]
-
-    X_remaining = X[:,:]
-    y_remaining = y[:]
+    print('X shape',X_trainOut.shape)
+    print('y shape',y_trainOut.shape)
 
     # Split the data in NsubFolds
     Nsubfolds = 10
-    inner_cv = StratifiedKFold(n_splits=Nsubfolds, shuffle=True, random_state=seed0) # should I put a seed here too (if yes, the same as in outer_cv)?
-
+    inner_cv = StratifiedKFold(n_splits=Nsubfolds, shuffle=True, random_state=seed0)
+    fs_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed0)
     # Init lists for the evaluation
     predYT = [] # all predictions
     y_trueList = [] # all correct answers
     scoresList = [] # all probabilities of the predictions
 
+    predYT_train = [] # all predictions
+    y_trueList_train = [] # all correct answers
+    scoresList_train = [] # all probabilities of the predictions
+
     # Init variables for the best model
     idx = 0
-    acc0 = 0
+    acc0,f1_scoresMid_init = 0.5,0
     file_toDel = 0
     bestMM_filename = filename.split('.')[0]+'_bestMModel'+'_NULL'+'.pkl'
-    top_features_inner = []
-    best_nb_features = 0
+
     best_top40 = []
 
     best_predict_proba=['NA']*74 ## 74 is the total number of data in the dataset
     # Loop
-    valid_idx_list = []
+    valid_idx_list = {}
+    trainMid_idx_list = {}
     list_data_idx = []
 
-    filenameMid ='Results/TestAUC/AUC_middleloop2.csv'
-    header = ['model FS_PM','Fold O']
-    auc_midRow = [f'{methodFS}_{methodPM}',fold]
-    for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_remaining,y_remaining)):
+    filenameMid =filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/AUC_middleloop.csv'
+    header = ['model FS_PM','Fold Out','AUC train','AUC','F1 train','F1']
+    eval_midRow = [f'{methodFS}_{methodPM}',fold]
+    auc_midRow = []
+    f1_midRow = []
+
+    filename_Bestparam = filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/BestParam_middleloop.csv'
+    header_bestParam = ['model FS_PM']
+    best_param_row = [f'{methodFS}_{methodPM}']
+
+    NbFeatures, top_features_idx = runFS(methodPM,modelFS,X_trainOut,y_trainOut,X_excludedOut,y_excludedOut,param_gridFS,fs_cv,fold,filename,seed0)
+
+    for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
+        header_bestParam.append(f'Fold {subfold}')
+        if fold not in valid_idx_list :
+            valid_idx_list[fold] = []
+        if fold not in trainMid_idx_list:
+            trainMid_idx_list[fold] = []
 
-        header.append(f'AUC {subfold}')
+
         nb_loop = f'{fold}-{subfold}'
-
-
         idx += 1
         # print the day and hour
         print('run began at',time.localtime())
         print('testOut_idx_',testOut_idx)
         print('valid_idx',valid_idx)
         print('train_idx',train_idx.shape)
-        valid_idx_list.append(valid_idx)
+        valid_idx_list[fold].append(valid_idx)
+        trainMid_idx_list[fold].append(train_idx)
 
         # Split data
-        X_train, X_valid = X_remaining[train_idx], X_remaining[valid_idx]
-        y_train, y_valid = y_remaining[train_idx], y_remaining[valid_idx]
+        X_train, X_valid = X_trainOut[train_idx], X_trainOut[valid_idx]
+        y_train, y_valid = y_trainOut[train_idx], y_trainOut[valid_idx]
 
-        # 2nd: run the FS model with the best hyperparameters
-        NbFeatures, X_train_selected,X_valid_selected, top_features_idx, top_40 = runFS(methodPM,modelFS,X_train, X_valid,y_train,y_valid,param_gridFS,inner_cv,nb_loop)
-        print('top_features_idx in inner loop',top_features_idx)
+        # Remove unnecessary features
+        print('len(top_features_idx)',len(top_features_idx))
+        X_excludedOut_selected = X_excludedOut[:,top_features_idx]
+        X_trainIn_selected = X_train[:,top_features_idx]
+        X_valid_selected = X_valid[:,top_features_idx]
+
+        # Add the excluded top 40 data back into the training set
+        X_train_selected= np.concatenate((X_excludedOut_selected,X_trainIn_selected),axis=0)
+        y_train = np.concatenate((y_excludedOut,y_train),axis=0)
 
         # Hyperparameter tuning for the predictive model (PM)
-        bestInnerM_filename = run_innerLoop(modelPM,X_train_selected,y_train,param_gridPM,inner_cv,top_features_idx,filename,subfold,nb_loop)
+        bestIn_estimator=hyperparam_tuning(modelPM, param_gridPM, X_train_selected, y_train, inner_cv,seed0)[0]
+        print('\033[94m methodPM:',methodPM)
+        print(f"\033[94m estimator's parameters: {bestIn_estimator.get_params()} \033[0m")
 
-        # Test the best model from inner loop
-        best_innerModel = pickle.load(open(bestInnerM_filename,'rb'))
-        best_innerModel.fit(X_train_selected, y_train) # Is it right to train the model again?
+        best_param_row.append(bestIn_estimator.get_params())
 
-        y_scores = best_innerModel.predict_proba(X_valid_selected)[:,1]
-        y_pred = best_innerModel.predict(X_valid_selected)
-
-        auc = metrics.roc_auc_score(y_valid,y_scores)
-        auc_midRow.append(auc)
-
+        # Evaluation validation sets
+        y_scores = bestIn_estimator.predict_proba(X_valid_selected)[:,1]
+        y_pred = bestIn_estimator.predict(X_valid_selected)
 
         # Save predictions in the lists for total evaluation
         for i in range(len(y_pred)):
@@ -415,25 +371,15 @@ def run_middleLoop(methodFS,methodPM, filename,X,y ,testOut_idx,fold,df_predict,
             y_trueList.append(y_valid[i])
             scoresList.append(y_scores[i])
 
-        ## Save the best model according to the AUC ##
-        if auc > acc0 :
-            acc0 = auc
-            # Save the model into "byte stream"
-            if file_toDel != 0:
-                mf.delete_file(bestMM_filename)
-            bestMM_filename = filename.split('.')[0]+'_bestModel_Middle'+f'_{fold}-{subfold}'+'.pkl'
+        #Evaluation training sets
+        y_scoresTrain = bestIn_estimator.predict_proba(X_train_selected)[:,1]
+        y_predTrain = bestIn_estimator.predict(X_train_selected)
 
-            pickle.dump(best_innerModel, open(bestMM_filename, 'wb'))
+        for i in range(len(y_predTrain)):
+            predYT_train.append(y_predTrain[i])
+            y_trueList_train.append(y_train[i])
+            scoresList_train.append(y_scoresTrain[i])
 
-            top_features_inner = top_features_idx
-            best_nb_features = NbFeatures
-            best_top40 = top_40
-            file_toDel = 1
-
-        # see if bestMM_filename exists and save the current model if not
-        if not os.path.exists(bestMM_filename):
-            bestMM_filename.replace('_bestModel_Middle', '_NoBest_Middle')
-            pickle.dump(best_innerModel, open(bestMM_filename, 'wb'))
 
         '''
         Give the real data index of the validation set for /out_valid
@@ -463,10 +409,8 @@ def run_middleLoop(methodFS,methodPM, filename,X,y ,testOut_idx,fold,df_predict,
 
             list_data_idx.append([data_idx+40,good_idx])
 
-            best_predict_proba[good_idx] = np.round(y_scores[i],4)
+            best_predict_proba[good_idx] = round(y_scores[i],4)
 
-    print('LEN auc_midRow',len(auc_midRow))
-    mf.write_files(filenameMid,header,auc_midRow)
 
     # Save predicted probabilities of the inner loop in a csv file
     mount_point =filename.split('/')[0]+'/'+filename.split('/')[1]
@@ -476,16 +420,27 @@ def run_middleLoop(methodFS,methodPM, filename,X,y ,testOut_idx,fold,df_predict,
     df_predict.insert(fold-1,None,best_predict_proba)
     df_predict.to_csv(prediction_filename, index=True)
 
+    # Save Evaluation of the middle loop
+    auc_midRow= round(metrics.roc_auc_score(y_trueList,scoresList),3)
+    f1_midRow = round(metrics.f1_score(y_trueList,predYT, average='macro'),3)
 
-    # return the average evaluation of the subfolds
-    auc_valid = round(metrics.roc_auc_score(y_trueList,scoresList),3)
-    f1_valid = round(metrics.f1_score(y_trueList,predYT, average='macro'),3)
+    auc_midRow_train= round(metrics.roc_auc_score(y_trueList_train,scoresList_train),3)
+    f1_midRow_train = round(metrics.f1_score(y_trueList_train,predYT_train, average='macro'),3)
+
+    eval_midRow.append(auc_midRow_train)
+    eval_midRow.append(auc_midRow)
+    eval_midRow.append(f1_midRow_train)
+    eval_midRow.append(f1_midRow)
+    mf.write_files(filenameMid,header,eval_midRow)
+
+    mf.write_files(filename_Bestparam,header_bestParam,best_param_row)
 
 
-    return predYT, y_trueList, bestMM_filename,best_nb_features,top_features_inner, best_top40, auc_valid, f1_valid
+    return predYT, y_trueList, bestMM_filename,NbFeatures, top_features_idx, auc_midRow, f1_midRow, bestIn_estimator,auc_midRow_train, f1_midRow_train, valid_idx_list, trainMid_idx_list
 
 
-def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_output):
+
+def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_output,seed0):
     """
     Outer loop of the nested cross validation:
 
@@ -512,8 +467,9 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     print('********Outer Loop**********')
 
     Nfold = 10
-    seed0 = 2024
-    seed0 = np.random.seed(seed0)
+    # seed0 = 2024
+    # seed0 = np.random.seed(seed0)
+    print(f' \033[34mseed0: {seed0} \033[0m')
 
     X_excluded = X[:40,:]
     y_excluded = y[:40]
@@ -532,45 +488,80 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     y_trainList = []
     y_predictsTrain = []
 
+    # Files to save evaluation
     mid_auc = []
     mid_f1 = []
+    mid_aucTrain = []
+    mid_f1Train = []
 
-    best_nb_features = 0
+    header_mid_AUCeval,header_mid_f1eval = ['model FS_PM'],['model FS_PM']
+    row_mid_AUCeval,row_mid_f1eval = [f'{methodFS}_{methodPM}'],[f'{methodFS}_{methodPM}']
+    header_topFeatures =['model FS_PM']
+    row_topFeatures = [f'{methodFS}_{methodPM}']
+
+    nb_features_selected= []
     top_features_outer = []
     best_top40 = []
-    acc0=0
-    fileToDel = 0
 
     df_predict_inner = pd.DataFrame() # dataframe to save the predictions proba of the inner loop
     best_predict_proba=['NA']* np.shape(X)[0] ## 74 is the total number of data in the dataset
+
+    idx_split_train={}
+    idx_split_test={}
+    total_valid_idx = []
+    total_trainM_idx = []
+
     for fold, (train_idx, test_idx) in enumerate(folds_CVT.split(X_remaining,y_remaining)):
         print(f"================Fold {fold+1}================")
+        header_mid_AUCeval.append(f'AUC {fold}')
+        header_mid_f1eval.append(f'F1 {fold}')
+        header_topFeatures.append(f'Fold {fold}')
 
+        if fold not in idx_split_train:
+            idx_split_train[fold] = []
+        if fold not in idx_split_test:
+            idx_split_test[fold] = []
         # Split data
         X_train, X_test = X_remaining[train_idx], X_remaining[test_idx]
         y_train, y_test = y_remaining[train_idx], y_remaining[test_idx]
 
         print('X_remaining shape',X_remaining.shape)
         print('train_idx',train_idx)
+        idx_split_train[fold].append(train_idx)
+        idx_split_test[fold].append(test_idx)
         print('X_train shape',X_train.shape)
 
-        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, top_40, auc_validation, f1_validation = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,test_idx,fold+1,df_predict_inner,seed0)
 
+
+        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator,auc_midTrain,f1_midTrain,valid_idx, trainM_idx = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
+
+        nb_features_selected.append(NbFeatures)
+        row_topFeatures.append(f"{NbFeatures}: {top_features_idx}")
         mid_auc.append(auc_validation)
+        row_mid_AUCeval.append(auc_validation)
         mid_f1.append(f1_validation)
+        row_mid_f1eval.append(f1_validation)
+
+        mid_aucTrain.append(auc_midTrain)
+        mid_f1Train.append(f1_midTrain)
+
+        total_valid_idx.append(valid_idx)
+        total_trainM_idx.append(trainM_idx)
 
         # Add the excluded top 40 data back into the training set
         X_train = np.concatenate(( X_excluded, X_train), axis=0)
         y_train = np.concatenate((y_excluded,y_train ), axis=0)
+        print('\033[34mX_train shape',X_train.shape)
+        print('y_train shape\033[0m',y_train.shape)
 
         # Test the best model from Middle loop
-        best_innerModel = pickle.load(open(bestInnerM_filename,'rb'))
-        best_innerModel.fit(X_train[:,top_features_idx], y_train)
-        y_Fpred = best_innerModel.predict(X_test[:,top_features_idx])
+        # best_innerModel = pickle.load(open(bestInnerM_filename,'rb'))
+        # bestMid_estimator.fit(X_train[:,top_features_idx], y_train)
+        y_Fpred = bestMid_estimator.predict(X_test[:,top_features_idx])
 
         # Test if the model has a predict_proba method
-        if hasattr(best_innerModel, "predict_proba"):
-            y_Fscores = best_innerModel.predict_proba(X_test[:,top_features_idx])[:,1]
+        if hasattr(bestMid_estimator, "predict_proba"):
+            y_Fscores = bestMid_estimator.predict_proba(X_test[:,top_features_idx])[:,1]
         else:
             y_Fscores = ['NA'] * len(y_Fpred)
 
@@ -581,8 +572,8 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
             y_trueList.append(y_test[i])
 
         # Test the training dataset
-        y_predTrain = best_innerModel.predict(X_train[:,top_features_idx])
-        y_scoresTrain = best_innerModel.predict_proba(X_train[:,top_features_idx])[:,1]
+        y_predTrain = bestMid_estimator.predict(X_train[:,top_features_idx])
+        y_scoresTrain = bestMid_estimator.predict_proba(X_train[:,top_features_idx])[:,1]
         y_scoresTrain = np.array(y_scoresTrain).astype(float)
 
         for i in range(len(y_predTrain)):
@@ -591,29 +582,10 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
             scores_trainList.append(y_scoresTrain[i])
 
         #Keep the best model with the best AUC
-        auc = metrics.roc_auc_score(y_test,y_Fscores)
-        if auc > acc0:
-            if fileToDel != 0:
-                mf.delete_file(bestOuterM_filename)
-                mf.delete_file(bestOuterM_eval)
-            acc0 = auc
-            # Save the model into "byte stream"
-            bestOuterM_filename = outerL_filename.split('.')[0]+'_bestModelOuter'+f'_{fold+1}'+'.pkl'
-            pickle.dump(best_innerModel, open(bestOuterM_filename, 'wb'))
-
-            # evaluation of the best model
-            column_name,list_eval = mf.evaluation(y_test,y_Fpred,y_Fscores)[1:]
-            bestOuterM_eval = bestOuterM_filename.split('.')[0]+'_Evaluation.csv'
-            mf.write_files(bestOuterM_eval,column_name,list_eval)
-            top_features_outer = top_features_idx
-            best_nb_features = NbFeatures
-            best_top40 = top_40
-            fileToDel = 1
-
-            print('best Outer model current:', bestOuterM_filename)
 
         for idx, data_idx in enumerate(test_idx):
                 best_predict_proba[data_idx+40] = np.round(y_Fscores[idx],4)
+
 
     print(f'shape of y_trueList {np.shape(y_trueList)}, shape of y_predicts {np.shape(y_predicts)}, shape of y_scoresList {np.shape(y_scoresList)}')
     auc_test = round(metrics.roc_auc_score(y_trueList,y_scoresList),3)
@@ -621,27 +593,38 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     f1_test = round(metrics.f1_score(y_trueList,y_predicts, average='macro'),3)
     f1_train = round(metrics.f1_score(y_trainList,y_predictsTrain, average='macro'),3)
 
-    column_nameTrain = ['Model FS_PM' ,'AUC train (O)','AUC test (O)','AUC validation (M)','F1 train (O)','F1 test (O)','F1 validation (M)']
-    list_evalTrain = [f'{methodFS}_{methodPM}',auc_train,auc_test,sum(mid_auc)/len(mid_auc),f1_train,f1_test, sum(mid_f1)/len(mid_f1)]
-    mf.write_files('Results/TestAUC/GlobEvaluation_testValidAUC_2.csv',column_nameTrain,list_evalTrain)
+    globalEval_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/GlobEvaluation.csv'
+    column_nameTrain = ['Model FS_PM' ,'AUC train (O)','AUC test (O)','AUC train (M)','AUC validation (M)','F1 train (O)','F1 test (O)','F1 train (M)','F1 validation (M)']
+    list_evalTrain = [f'{methodFS}_{methodPM}',auc_train,auc_test,sum(mid_aucTrain)/len(mid_aucTrain),sum(mid_auc)/len(mid_auc),f1_train,f1_test,sum(mid_f1Train)/len(mid_f1Train),sum(mid_f1)/len(mid_f1)]
+    mf.write_files(globalEval_filename,column_nameTrain,list_evalTrain)
 
     # Save predictions of the inner loop in a csv file
     prediction_filename = innerL_filename.split('.')[0]+f'_Innerpredictions{fold}'+'.csv'
     df_predict = pd.DataFrame({'Actual':correctPred_InL , 'Predicted': predictInL})
     df_predict.to_csv(prediction_filename, index=False)
 
+    # AUC from middle loop
+    auc_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/AUC_middleloop_fromOut.csv'
+    mf.write_files(auc_filename,header_mid_AUCeval,row_mid_AUCeval)
+    # F1 from middle loop
+    f1_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/F1_middleloop_fromOut.csv'
+    mf.write_files(f1_filename,header_mid_f1eval,row_mid_f1eval)
+    # Top features from middle loop
+    topFeatures_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/TopFeatures_middleloop_fromOut.csv'
+    mf.write_files(topFeatures_filename,header_topFeatures,row_topFeatures)
+
     # Evaluation of outer loop models and save results in files
     print("********Final**********")
     column_name,list_eval = mf.evaluation(y_trueList,y_predicts,y_scoresList)[1:]
     column_name.insert(0,'Nb Features Selected')
-    list_eval.insert(0,best_nb_features)
+    list_eval.insert(0,f'{nb_features_selected}')
     mf.write_files(outerL_filename,column_name,list_eval)
 
     #Save evaluation in a csv file for each model MethodPM_MethodFS that is runned in outerloop and add to the previous data
     # Add in the first index the name of the model
     list_eval.insert(0,f'{methodFS}_{methodPM}')
     column_name.insert(0,'Model FS_PM')
-    performance_filename = 'Results/TestAUC/Performances48_testValidAUC_2.csv'
+    performance_filename = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/Results/Performances48.csv'
     mf.save_performance(list_eval, column_name, performance_filename)
 
     # Save predictions of the outer loop in a csv file
@@ -656,4 +639,16 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     df_predict = pd.DataFrame({'Predicted proba': best_predict_proba})
     df_predict.to_csv(prediction_filename, index=False)
 
-    return top_features_outer, best_nb_features, best_top40
+    # Savind dictionnary in json file
+    import json
+    dictionnary = {'Validation_idx': total_valid_idx, 'Train_idx_Mid': total_trainM_idx, 'Test_idx': idx_split_test, 'Train_idx': idx_split_train}
+    dictionnary_converted = mf.convert_ndarray(dictionnary)
+    dictionnary_convertedL = mf.convert_to_list(dictionnary_converted)
+    filename_idx = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/'+ outerL_filename.split('/')[2]+'/index/List_idx.json'
+    print('filename_idx',filename_idx)
+    if not os.path.exists(os.path.dirname(filename_idx)):
+        os.makedirs(os.path.dirname(filename_idx))
+    with open(filename_idx, 'w') as f:
+        json.dump(dictionnary_convertedL, f)
+
+    return top_features_outer, nb_features_selected, best_top40

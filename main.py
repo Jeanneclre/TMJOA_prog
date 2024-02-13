@@ -29,37 +29,43 @@ X = A.iloc[:, 1:].values
 # # X= X[:120]
 # # y= y[:120]
 
-# Write the folder in which you want your output to be saved without '/' at the end
-folder_output='Predictions/middleLoop_testAUC_2'
-folder_output+='/'
 
-for iii in range(0, len(vecT)):
-    i_PM = vecT[iii][0]
-    i_FS = vecT[iii][1]
+seeds = [2023,2024,2025]
+for seed in seeds:
+    # Write the folder in which you want your output to be saved without '/' at the end
+    folder_output=f'Predictions/40in_FScv_saveIDX_{seed}'
+    folder_output+='/'
 
-
-    print(f'====== FS with {methods_FS[i_FS]} ======')
-    print(f'________ Model trained - {methods_list[i_PM]} ________')
-
-    # Init files for results
-    innerL_filename = f"{folder_output}{methods_FS[i_FS]}_{methods_list[i_PM]}/scores_{methods_list[i_PM]}_InnerLoop.csv"
-    outerL_filename = f"{folder_output}{methods_FS[i_FS]}_{methods_list[i_PM]}/result_{methods_list[i_PM]}_OuterLoop.csv"
-    if not os.path.exists(os.path.dirname(innerL_filename)):
-        os.makedirs(os.path.dirname(innerL_filename))
-
-    # Remove files if they exist
-    mf.delete_file(innerL_filename)
-    mf.delete_file(outerL_filename)
+    folder_results = folder_output+'Results/'
+    if not os.path.exists(os.path.dirname(folder_results)):
+        os.makedirs(os.path.dirname(folder_results))
+    for iii in range(0, len(vecT)):
+        i_PM = vecT[iii][0]
+        i_FS = vecT[iii][1]
 
 
-    top_features_idx,nb_features, best40FS = st1.OuterLoop(X, y, methods_FS[i_FS], methods_list[i_PM], innerL_filename, outerL_filename, folder_output)
+        print(f'====== FS with {methods_FS[i_FS]} ======')
+        print(f'________ Model trained - {methods_list[i_PM]} ________')
 
-    print('top_features_idx in main:',top_features_idx)
-    # Save in a file the top features
-    data = [f'{methods_FS[i_FS]}_{methods_list[i_PM]}', nb_features]
-    for i in range(len(top_features_idx)):
-        data.append(f'{A.columns[top_features_idx[i]+1]}')
-    #csv file to save the top features and the model who used them
-    first_row = ['model FS_PM','Nb features', 'top feature 1', 'top feature 2', 'top feature 3', 'top feature 4', 'top feature 5', 'top feature 6', 'top feature 7', 'top feature 8', 'top feature 9', 'top feature 10','top feature 11','top feature 12','top feature 13','top feature 14','top feature 15','top feature 16','top feature 17','top feature 18','top feature 19','top feature 20','top feature 21','top feature 22','top feature 23','top feature 24','top feature 25','top feature 26','top feature 27','top feature 28','top feature 29','top feature 30','top feature 31','top feature 32','top feature 33','top feature 34','top feature 35','top feature 36','top feature 37','top feature 38','top feature 39','top feature 40']
+        # Init files for results
+        innerL_filename = f"{folder_output}{methods_FS[i_FS]}_{methods_list[i_PM]}/scores_{methods_list[i_PM]}_InnerLoop.csv"
+        outerL_filename = f"{folder_output}{methods_FS[i_FS]}_{methods_list[i_PM]}/result_{methods_list[i_PM]}_OuterLoop.csv"
+        if not os.path.exists(os.path.dirname(innerL_filename)):
+            os.makedirs(os.path.dirname(innerL_filename))
 
-    mf.write_files(f"{folder_output}topFeatures.csv", first_row, data)
+        # Remove files if they exist
+        mf.delete_file(innerL_filename)
+        mf.delete_file(outerL_filename)
+
+
+        top_features_idx,nb_features, best40FS = st1.OuterLoop(X, y, methods_FS[i_FS], methods_list[i_PM], innerL_filename, outerL_filename, folder_output,seed)
+
+        print('top_features_idx in main:',top_features_idx)
+        # Save in a file the top features
+        data = [f'{methods_FS[i_FS]}_{methods_list[i_PM]}', nb_features]
+        for i in range(len(top_features_idx)):
+            data.append(f'{A.columns[top_features_idx[i]+1]}') # +1 to avoidthe label column
+        #csv file to save the top features and the model who used them
+        first_row = ['model FS_PM','Nb features', 'top feature 1', 'top feature 2', 'top feature 3', 'top feature 4', 'top feature 5', 'top feature 6', 'top feature 7', 'top feature 8', 'top feature 9', 'top feature 10','top feature 11','top feature 12','top feature 13','top feature 14','top feature 15','top feature 16','top feature 17','top feature 18','top feature 19','top feature 20','top feature 21','top feature 22','top feature 23','top feature 24','top feature 25','top feature 26','top feature 27','top feature 28','top feature 29','top feature 30','top feature 31','top feature 32','top feature 33','top feature 34','top feature 35','top feature 36','top feature 37','top feature 38','top feature 39','top feature 40']
+
+        mf.write_files(f"{folder_output}topFeatures.csv", first_row, data)
