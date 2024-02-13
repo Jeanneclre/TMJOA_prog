@@ -104,6 +104,7 @@ def runFS(modelPM,model,X,y,X_excludedOut,y_excludedOut,param_grid,inner_cv,fold
     auc_perNb=[]
     top_indicesperNb = []
     top_N_largest_indices_final = []
+
     for nb in nb_features:
         y_trueList_fs = []
         scoresList_fs = []
@@ -304,7 +305,8 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
 
     best_predict_proba=['NA']*74 ## 74 is the total number of data in the dataset
     # Loop
-    valid_idx_list = []
+    valid_idx_list = {}
+    trainMid_idx_list = {}
     list_data_idx = []
 
     filenameMid =filename.split('/')[0]+'/'+filename.split('/')[1]+'/Results/AUC_middleloop.csv'
@@ -322,6 +324,11 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
     for subfold, (train_idx, valid_idx) in enumerate(inner_cv.split(X_trainOut,y_trainOut)):
         print(f'________Middle Loop {subfold}_________')
         header_bestParam.append(f'Fold {subfold}')
+        if fold not in valid_idx_list :
+            valid_idx_list[fold] = []
+        if fold not in trainMid_idx_list:
+            trainMid_idx_list[fold] = []
+
 
         nb_loop = f'{fold}-{subfold}'
         idx += 1
@@ -330,7 +337,8 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
         print('testOut_idx_',testOut_idx)
         print('valid_idx',valid_idx)
         print('train_idx',train_idx.shape)
-        valid_idx_list.append(valid_idx)
+        valid_idx_list[fold].append(valid_idx)
+        trainMid_idx_list[fold].append(train_idx)
 
         # Split data
         X_train, X_valid = X_trainOut[train_idx], X_trainOut[valid_idx]
@@ -371,7 +379,7 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
             predYT_train.append(y_predTrain[i])
             y_trueList_train.append(y_train[i])
             scoresList_train.append(y_scoresTrain[i])
-      
+
 
         '''
         Give the real data index of the validation set for /out_valid
@@ -427,8 +435,8 @@ def run_middleLoop(methodFS,methodPM, filename,X_trainOut,y_trainOut, X_excluded
 
     mf.write_files(filename_Bestparam,header_bestParam,best_param_row)
 
-  
-    return predYT, y_trueList, bestMM_filename,NbFeatures, top_features_idx, auc_midRow, f1_midRow, bestIn_estimator,auc_midRow_train, f1_midRow_train
+
+    return predYT, y_trueList, bestMM_filename,NbFeatures, top_features_idx, auc_midRow, f1_midRow, bestIn_estimator,auc_midRow_train, f1_midRow_train, valid_idx_list, trainMid_idx_list
 
 
 
@@ -500,6 +508,8 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
     idx_split_train={}
     idx_split_test={}
+    total_valid_idx = []
+    total_trainM_idx = []
 
     for fold, (train_idx, test_idx) in enumerate(folds_CVT.split(X_remaining,y_remaining)):
         print(f"================Fold {fold+1}================")
@@ -507,19 +517,23 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
         header_mid_f1eval.append(f'F1 {fold}')
         header_topFeatures.append(f'Fold {fold}')
 
+        if fold not in idx_split_train:
+            idx_split_train[fold] = []
+        if fold not in idx_split_test:
+            idx_split_test[fold] = []
         # Split data
         X_train, X_test = X_remaining[train_idx], X_remaining[test_idx]
         y_train, y_test = y_remaining[train_idx], y_remaining[test_idx]
 
         print('X_remaining shape',X_remaining.shape)
         print('train_idx',train_idx)
-        idx_split_train[fold] = train_idx
-        idx_split_test[fold] = test_idx
+        idx_split_train[fold].append(train_idx)
+        idx_split_test[fold].append(test_idx)
         print('X_train shape',X_train.shape)
 
-       
 
-        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator,auc_midTrain,f1_midTrain = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
+
+        predictInL, correctPred_InL, bestInnerM_filename, NbFeatures, top_features_idx, auc_validation, f1_validation,bestMid_estimator,auc_midTrain,f1_midTrain,valid_idx, trainM_idx = run_middleLoop(methodFS,methodPM, innerL_filename,X_train,y_train,X_excluded,y_excluded,test_idx,fold+1,df_predict_inner,seed0)
 
         nb_features_selected.append(NbFeatures)
         row_topFeatures.append(f"{NbFeatures}: {top_features_idx}")
@@ -530,6 +544,9 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
 
         mid_aucTrain.append(auc_midTrain)
         mid_f1Train.append(f1_midTrain)
+
+        total_valid_idx.append(valid_idx)
+        total_trainM_idx.append(trainM_idx)
 
         # Add the excluded top 40 data back into the training set
         X_train = np.concatenate(( X_excluded, X_train), axis=0)
@@ -621,5 +638,17 @@ def OuterLoop(X, y,methodFS, methodPM, innerL_filename, outerL_filename,folder_o
     prediction_filename = f'{folder_output}out/{methodFS}_{methodPM}.csv'
     df_predict = pd.DataFrame({'Predicted proba': best_predict_proba})
     df_predict.to_csv(prediction_filename, index=False)
+
+    # Savind dictionnary in json file
+    import json
+    dictionnary = {'Validation_idx': total_valid_idx, 'Train_idx_Mid': total_trainM_idx, 'Test_idx': idx_split_test, 'Train_idx': idx_split_train}
+    dictionnary_converted = mf.convert_ndarray(dictionnary)
+    dictionnary_convertedL = mf.convert_to_list(dictionnary_converted)
+    filename_idx = outerL_filename.split('/')[0]+'/'+outerL_filename.split('/')[1]+'/'+ outerL_filename.split('/')[2]+'/index/List_idx.json'
+    print('filename_idx',filename_idx)
+    if not os.path.exists(os.path.dirname(filename_idx)):
+        os.makedirs(os.path.dirname(filename_idx))
+    with open(filename_idx, 'w') as f:
+        json.dump(dictionnary_convertedL, f)
 
     return top_features_outer, nb_features_selected, best_top40

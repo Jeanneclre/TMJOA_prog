@@ -133,3 +133,22 @@ def mean(lst):
     Output: mean of the list
     """
     return sum(lst) / len(lst)
+
+
+def convert_ndarray(d):
+    for key in d:
+        if isinstance(d[key], np.ndarray):
+            d[key] = d[key].tolist()  # Convert ndarray to list
+        elif isinstance(d[key], dict):
+            d[key] = convert_ndarray(d[key])  # Recurse into sub-dictionaries
+    return d
+
+def convert_to_list(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_to_list(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_list(v) for v in obj]
+    else:
+        return obj

@@ -33,7 +33,7 @@ X = A.iloc[:, 1:].values
 seeds = [2023,2024,2025]
 for seed in seeds:
     # Write the folder in which you want your output to be saved without '/' at the end
-    folder_output='Predictions/40in_FScv_{seed}'
+    folder_output=f'Predictions/40in_FScv_saveIDX_{seed}'
     folder_output+='/'
 
     folder_results = folder_output+'Results/'
@@ -64,7 +64,7 @@ for seed in seeds:
         # Save in a file the top features
         data = [f'{methods_FS[i_FS]}_{methods_list[i_PM]}', nb_features]
         for i in range(len(top_features_idx)):
-            data.append(f'{A.columns[top_features_idx[i]+1]}')
+            data.append(f'{A.columns[top_features_idx[i]+1]}') # +1 to avoidthe label column
         #csv file to save the top features and the model who used them
         first_row = ['model FS_PM','Nb features', 'top feature 1', 'top feature 2', 'top feature 3', 'top feature 4', 'top feature 5', 'top feature 6', 'top feature 7', 'top feature 8', 'top feature 9', 'top feature 10','top feature 11','top feature 12','top feature 13','top feature 14','top feature 15','top feature 16','top feature 17','top feature 18','top feature 19','top feature 20','top feature 21','top feature 22','top feature 23','top feature 24','top feature 25','top feature 26','top feature 27','top feature 28','top feature 29','top feature 30','top feature 31','top feature 32','top feature 33','top feature 34','top feature 35','top feature 36','top feature 37','top feature 38','top feature 39','top feature 40']
 
