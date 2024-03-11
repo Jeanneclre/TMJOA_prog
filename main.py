@@ -33,13 +33,14 @@ X = A.iloc[:, 1:].values
 seeds = [2023,2024,2025]
 for seed in seeds:
     # Write the folder in which you want your output to be saved without '/' at the end
-    folder_output=f'Predictions/40in_FScv_saveIDX_{seed}'
+    folder_output=f'Predictions/NewHTgrid_RandomSearch_{seed}'
     folder_output+='/'
 
     folder_results = folder_output+'Results/'
     if not os.path.exists(os.path.dirname(folder_results)):
         os.makedirs(os.path.dirname(folder_results))
     for iii in range(0, len(vecT)):
+        print('loop vecT:',iii)
         i_PM = vecT[iii][0]
         i_FS = vecT[iii][1]
 

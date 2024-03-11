@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import csv
 
-
 A = pd.read_csv("./TMJOAI_Long_040422_Norm.csv")
 
 y = A.iloc[:, 0].values

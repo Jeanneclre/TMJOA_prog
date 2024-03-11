@@ -223,7 +223,7 @@ def hyperparam_tuning(model, param_grid, X_train, y_train, inner_cv,seed0):
     '''
     scorer = metrics.make_scorer(metrics.roc_auc_score)
 
-    if len(param_grid) > 1:
+    if len(param_grid) > 20:
         method = 'RandomizedSearchCV'
         hyperparam_tuning = RandomizedSearchCV(estimator=model,
                             param_distributions=param_grid,

@@ -36,8 +36,8 @@ def evaluation(y_true,y_pred,y_scores):
 
     errors = fp+fn
     accuracy = round(mt.accuracy_score(y_true,y_pred)*100,3)
-    precision_case = round(mt.precision_score(y_true,y_pred,zero_division="warn"),3)
-    precision_control = round(mt.precision_score(ones-y_true,ones-y_pred,zero_division="warn"),3)
+    precision_case = round(mt.precision_score(y_true,y_pred,zero_division="warn",average='macro'),3)
+    precision_control = round(mt.precision_score(ones-y_true,ones-y_pred,zero_division="warn",average='macro'),3)
     recall_case = round(mt.recall_score(y_true,y_pred),3)
     recall_control = round(mt.recall_score(ones-y_true,ones-y_pred),3)
     specificity = round(tn/(tn+fp),3)
